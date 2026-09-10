@@ -15,6 +15,13 @@
       "when": 1789024977910,
       "tag": "0001_add_user_registration",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1789028076557,
+      "tag": "0002_chilly_vision",
+      "breakpoints": true
     }
   ]
 }
