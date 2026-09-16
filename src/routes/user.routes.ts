@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { authMiddleware } from "../middlewares/auth.middleware";
 import { getCurrentUser, logoutUser, registerUser } from "../services/user.service";
 
 export const userRoutes = new Elysia()
@@ -25,22 +26,11 @@ export const userRoutes = new Elysia()
       }),
     }
   )
+  .use(authMiddleware)
   .get(
     "/api/user/current",
-    async ({ headers, request, set }) => {
+    async ({ token, set }) => {
       try {
-        const authHeader = headers.authorization || request.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-          set.status = 401;
-          return { error: "unauthorized" };
-        }
-
-        const token = authHeader.slice(7).trim();
-        if (!token) {
-          set.status = 401;
-          return { error: "unauthorized" };
-        }
-
         const user = await getCurrentUser(token);
         if (!user) {
           set.status = 401;
@@ -58,20 +48,8 @@ export const userRoutes = new Elysia()
   )
   .delete(
     "/api/users/logout",
-    async ({ headers, request, set }) => {
+    async ({ token, set }) => {
       try {
-        const authHeader = headers.authorization || request.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-          set.status = 401;
-          return { error: "unauthorized" };
-        }
-
-        const token = authHeader.slice(7).trim();
-        if (!token) {
-          set.status = 401;
-          return { error: "unauthorized" };
-        }
-
         const success = await logoutUser(token);
         if (!success) {
           set.status = 401;
@@ -87,4 +65,5 @@ export const userRoutes = new Elysia()
       }
     }
   );
+
 
