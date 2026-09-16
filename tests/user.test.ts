@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db";
-import { users } from "../src/db/schema";
+import { sessions, users } from "../src/db/schema";
 import { app } from "../src/index";
 
 describe("User Registration Endpoint (POST /api/users)", () => {
@@ -91,3 +91,117 @@ describe("User Registration Endpoint (POST /api/users)", () => {
     expect(response.status).toBeGreaterThanOrEqual(400);
   });
 });
+
+describe("Get Current User Endpoint (GET /api/user/current)", () => {
+  const testEmail = "current.user@vibe.com";
+  const testToken = "valid-session-token-12345";
+  let testUserId: number;
+
+  beforeAll(async () => {
+    // Bersihkan data lama jika ada
+    const existingUsers = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, testEmail))
+      .limit(1);
+
+    if (existingUsers.length > 0) {
+      const existingUser = existingUsers[0]!;
+      await db.delete(sessions).where(eq(sessions.userId, existingUser.id));
+      await db.delete(users).where(eq(users.id, existingUser.id));
+    }
+
+    // Buat user baru
+    const hashedPassword = await bcrypt.hash("rahasia", 10);
+    const [userResult] = await db.insert(users).values({
+      name: "Current User",
+      email: testEmail,
+      password: hashedPassword,
+    });
+    testUserId = Number(userResult.insertId);
+
+    // Buat session baru untuk user tersebut
+    await db.insert(sessions).values({
+      userId: testUserId,
+      token: testToken,
+    });
+  });
+
+  afterAll(async () => {
+    if (testUserId) {
+      await db.delete(sessions).where(eq(sessions.userId, testUserId));
+      await db.delete(users).where(eq(users.id, testUserId));
+    }
+  });
+
+  it("berhasil mendapatkan data user saat ini dengan token yang valid", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/user/current", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${testToken}`,
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        id: number | string;
+        name: string;
+        email: string;
+        createdAt: string;
+      };
+    };
+
+    expect(body).toHaveProperty("data");
+    expect(body.data.id).toBe(testUserId);
+    expect(body.data.name).toBe("Current User");
+    expect(body.data.email).toBe(testEmail);
+    expect(typeof body.data.createdAt).toBe("string");
+    expect(new Date(body.data.createdAt).toString()).not.toBe("Invalid Date");
+  });
+
+  it("mengembalikan 401 unauthorized ketika header Authorization tidak disertakan", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/user/current", {
+        method: "GET",
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+
+  it("mengembalikan 401 unauthorized ketika token tidak valid / tidak ada di database", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/user/current", {
+        method: "GET",
+        headers: {
+          Authorization: "Bearer invalid-token-99999",
+        },
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+
+  it("mengembalikan 401 unauthorized ketika format header bukan Bearer", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/user/current", {
+        method: "GET",
+        headers: {
+          Authorization: "Basic 12345",
+        },
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+});
+

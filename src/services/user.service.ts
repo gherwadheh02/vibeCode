@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { users } from "../db/schema";
+import { sessions, users } from "../db/schema";
 
 export interface RegisterUserInput {
   name: string;
@@ -34,4 +34,30 @@ export async function registerUser(input: RegisterUserInput) {
 
   // 4. Kembalikan response sukses
   return { data: "oke" };
+}
+
+export async function getCurrentUser(token: string) {
+  const result = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      createAt: users.createAt,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(eq(sessions.token, token))
+    .limit(1);
+
+  const user = result[0];
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    createdAt: user.createAt instanceof Date ? user.createAt.toISOString() : new Date(user.createAt).toISOString(),
+  };
 }
