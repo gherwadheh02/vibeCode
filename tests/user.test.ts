@@ -205,3 +205,126 @@ describe("Get Current User Endpoint (GET /api/user/current)", () => {
   });
 });
 
+describe("Logout User Endpoint (DELETE /api/users/logout)", () => {
+  const testEmail = "logout.user@vibe.com";
+  const testToken = "logout-session-token-12345";
+  let testUserId: number;
+
+  beforeAll(async () => {
+    // Bersihkan data lama jika ada
+    const existingUsers = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, testEmail))
+      .limit(1);
+
+    if (existingUsers.length > 0) {
+      const existingUser = existingUsers[0]!;
+      await db.delete(sessions).where(eq(sessions.userId, existingUser.id));
+      await db.delete(users).where(eq(users.id, existingUser.id));
+    }
+
+    // Buat user baru
+    const hashedPassword = await bcrypt.hash("rahasia", 10);
+    const [userResult] = await db.insert(users).values({
+      name: "Logout User",
+      email: testEmail,
+      password: hashedPassword,
+    });
+    testUserId = Number(userResult.insertId);
+
+    // Buat session baru untuk user tersebut
+    await db.insert(sessions).values({
+      userId: testUserId,
+      token: testToken,
+    });
+  });
+
+  afterAll(async () => {
+    if (testUserId) {
+      await db.delete(sessions).where(eq(sessions.userId, testUserId));
+      await db.delete(users).where(eq(users.id, testUserId));
+    }
+  });
+
+  it("berhasil logout dan menghapus session ketika token valid", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/users/logout", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${testToken}`,
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { data: string };
+    expect(body).toEqual({ data: "OK" });
+
+    // Verifikasi di database bahwa sesi telah terhapus
+    const remainingSessions = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.token, testToken));
+
+    expect(remainingSessions.length).toBe(0);
+  });
+
+  it("mengembalikan 401 unauthorized ketika logout ulang dengan token yang sudah dihapus", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/users/logout", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${testToken}`,
+        },
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+
+  it("mengembalikan 401 unauthorized ketika header Authorization tidak disertakan", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/users/logout", {
+        method: "DELETE",
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+
+  it("mengembalikan 401 unauthorized ketika token tidak valid / tidak ada di database", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/users/logout", {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer invalid-token-99999",
+        },
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+
+  it("mengembalikan 401 unauthorized ketika format header bukan Bearer", async () => {
+    const response = await app.handle(
+      new Request("http://localhost/api/users/logout", {
+        method: "DELETE",
+        headers: {
+          Authorization: "Basic 12345",
+        },
+      })
+    );
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error: string };
+    expect(body).toEqual({ error: "unauthorized" });
+  });
+});
+

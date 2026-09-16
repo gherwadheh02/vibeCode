@@ -61,3 +61,11 @@ export async function getCurrentUser(token: string) {
     createdAt: user.createAt instanceof Date ? user.createAt.toISOString() : new Date(user.createAt).toISOString(),
   };
 }
+
+export async function logoutUser(token: string): Promise<boolean> {
+  const [result]: any = await db
+    .delete(sessions)
+    .where(eq(sessions.token, token));
+
+  return Boolean(result && result.affectedRows > 0);
+}
