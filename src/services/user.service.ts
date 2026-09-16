@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
+import type { ResultSetHeader } from "mysql2";
 import { db } from "../db";
 import { sessions, users } from "../db/schema";
 
@@ -63,9 +64,9 @@ export async function getCurrentUser(token: string) {
 }
 
 export async function logoutUser(token: string): Promise<boolean> {
-  const [result]: any = await db
+  const [result] = (await db
     .delete(sessions)
-    .where(eq(sessions.token, token));
+    .where(eq(sessions.token, token))) as unknown as [ResultSetHeader, unknown];
 
   return Boolean(result && result.affectedRows > 0);
 }
